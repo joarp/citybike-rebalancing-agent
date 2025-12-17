@@ -10,10 +10,14 @@
 ## Setup
 
 1. Create a conda virtual environment:
-`conda create --name cr-agent python=3.10.14`
-`conda activate cr-agent`
+```
+conda create --name cr-agent python=3.10.14
+conda activate cr-agent
+```
 2. Install project dependencies:
-`pip install -r requirements.txt`
+```
+pip install -r requirements.txt
+```
 3. Hopsworks .env
 4.
 
