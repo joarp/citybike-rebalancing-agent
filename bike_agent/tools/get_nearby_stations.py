@@ -2,28 +2,62 @@ import os
 import numpy as np
 import pandas as pd
 
-from feature_store import get_features
+from .feature_store import get_features
 
+"""
+Computes distance from the current driver location (START_LAT, START_LON) to each station.
+
+Filters stations by radius and k nearest.
+
+Returns a small subset of stations near the driver with distances.
+
+Use case: “I’m at this spot — which stations are close enough to visit next?”
+
+So get_nearby_stations is driver-centric and gives a local, filtered view.
+"""
 # Temporary global variables that will be set by the driver (his coordinates)
 START_LAT = 39.566056
 START_LON = 2.659389
 
+# def _haversine_km(lat1, lon1, lat2, lon2):
+#     """
+#     Vectorized Haversine distance (km). lat2/lon2 can be numpy arrays/Series.
+#     """
+#     R = 6371.0  # Earth radius in km
+
+#     lat1 = np.radians(lat1)
+#     lon1 = np.radians(lon1)
+#     lat2 = np.radians(lat2.astype(float))
+#     lon2 = np.radians(lon2.astype(float))
+
+#     dlat = lat2 - lat1
+#     dlon = lon2 - lon1
+
+#     a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
+#     c = 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
+#     return R * c
+
+
 def _haversine_km(lat1, lon1, lat2, lon2):
     """
-    Vectorized Haversine distance (km). lat2/lon2 can be numpy arrays/Series.
+    Compute Haversine distance in km between two points.
+    Works with floats, lists, or Pandas Series/NumPy arrays.
     """
-    R = 6371.0  # Earth radius in km
+    # Convert everything to NumPy arrays
+    lat1 = np.asarray(lat1, dtype=float)
+    lon1 = np.asarray(lon1, dtype=float)
+    lat2 = np.asarray(lat2, dtype=float)
+    lon2 = np.asarray(lon2, dtype=float)
 
-    lat1 = np.radians(lat1)
-    lon1 = np.radians(lon1)
-    lat2 = np.radians(lat2.astype(float))
-    lon2 = np.radians(lon2.astype(float))
+    # Convert to radians
+    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
 
     dlat = lat2 - lat1
     dlon = lon2 - lon1
 
-    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
-    c = 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+    c = 2 * np.arcsin(np.sqrt(a))
+    R = 6371  # Earth radius in km
     return R * c
 
 
