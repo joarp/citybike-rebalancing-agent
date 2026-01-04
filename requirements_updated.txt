@@ -1,5 +1,5 @@
 gradio==6.2.0
-hopsworks==4.6.0
+hopsworks[python,great-expectations]==4.6.0
 numpy==1.26.4
 openai==2.14.0
 pandas==2.3.3
