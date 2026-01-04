@@ -1,0 +1,33 @@
+name: hourly-bike-data-fetch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '00 17 * * *'  # 17:00 UTC daily (Stockholm = 18:00 in January)
+
+jobs:
+  schedule_pipelines:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repo content
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: |
+          python bike_agent/pipelines/build_features.py
