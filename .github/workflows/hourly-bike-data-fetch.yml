@@ -1,32 +1,30 @@
-name: hourly-bike-data-fetch
+name: bike-data-fetch
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '00 17 * * *'  # 17:00 UTC daily (Stockholm = 18:00 in January)
+    - cron: "0 16 * * *"  # 17:00 Europe/Stockholm during CET (winter). Cron is UTC.
 
 jobs:
-  schedule_pipelines:
+  run_build_features:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
-      - name: Checkout repo content
+      - name: checkout repo content
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: setup python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: "3.10"
+          cache: "pip"
 
-      - name: Install python packages
+      - name: install minimal deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests pandas hopsworks
 
-      - name: Run pipeline
+      - name: run build_features
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
         run: |
