@@ -1,55 +1,55 @@
-# build features and upload to hopsworks (run this hourly)
-# temporary script that can be run on demand until we decide on exact structure
+# bike_agent/pipelines/build_features.py
 
+import os
 import requests
 import pandas as pd
 import hopsworks
-import datetime
-import json
-import os
-from dotenv import load_dotenv
 
 def main():
     network_id = "bicipalma"
     url = f"https://api.citybik.es/v2/networks/{network_id}"
-    response = requests.get(url)
-    print(f"Status Code: {response.status_code}")
-    print(f"Station Count: {len(response.json()['network']['stations'])}")
+
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
     data = response.json()
 
     stations = data["network"]["stations"]
     df = pd.DataFrame(stations)
-    df["timestamp"] = (df["timestamp"].str.replace("Z", "", regex=False).pipe(pd.to_datetime, utc=True))
-    df.drop(columns=["extra"], inplace=True)
 
-    # Load variables from .env (keep it in the same folder for now, will fix when running the finished app later)
-    load_dotenv()
+    df["timestamp"] = (
+        df["timestamp"]
+        .str.replace("Z", "", regex=False)
+        .pipe(pd.to_datetime, utc=True)
+    )
+    if "extra" in df.columns:
+        df.drop(columns=["extra"], inplace=True)
 
-    # Connect to Hopsworks using the .env variables
-    project = hopsworks.login(api_key_value=os.getenv("HOPSWORKS_API_KEY"))
-    print(f"Connected to MJ Project: {project.name}")
+    api_key = os.getenv("HOPSWORKS_API_KEY")
+    if not api_key:
+        raise RuntimeError("HOPSWORKS_API_KEY is not set (use GitHub Secrets in Actions).")
 
-    # Create feature group
+    project = hopsworks.login(api_key_value=api_key)
+    print(f"Connected to Hopsworks project: {project.name}")
+
     fs = project.get_feature_store()
     bike_fg = fs.get_or_create_feature_group(
         name="station_dynamics",
         version=1,
-        primary_key=['id'],
-        event_time='timestamp',
+        primary_key=["id"],
+        event_time="timestamp",
         online_enabled=True,
     )
     bike_fg.insert(df)
 
-    # Register the Feature View
     query = bike_fg.select_all()
     feature_view = fs.get_or_create_feature_view(
         name="station_dynamics_view",
         version=1,
         description="Interface for Rebalancing Agent to get station state and history",
-        query=query
+        query=query,
     )
 
     print(f"Feature View '{feature_view.name}' version {feature_view.version} is ready!")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
