@@ -25,6 +25,16 @@ def optimize_route(station_ids, start_id, coords_df):
 def orchestrator(task_payload):
     user_context = task_payload.copy()
 
+    ### NEW  ###
+    # task_payload now also contain the coordinates
+    # "start_coordinates": coords,
+    start_coords = {
+        "lat": task_payload["start_coordinates"]["lat"],
+        "lon": task_payload["start_coordinates"]["lon"]
+    }
+    ### END of NEW ###
+
+
     # --- Nearby stations ---
     get_nearby_stations = get_tool("get_nearby_stations")
     nearby_df = get_nearby_stations(k=10, radius_km=3.0)
@@ -34,10 +44,6 @@ def orchestrator(task_payload):
     station_ids = list(nearby_df["id"])
     start_id = "start"
 
-    start_coords = {
-        "lat": task_payload["start"]["lat"],
-        "lon": task_payload["start"]["lon"]
-    }
 
     # Add pseudo-start to coords dataframe
     start_row = pd.DataFrame([{

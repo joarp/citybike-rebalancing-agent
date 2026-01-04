@@ -1,28 +1,48 @@
 # bike_agent/agent/llm_client.py
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-import torch
+import os
 import json
+from dotenv import load_dotenv
+from openai import OpenAI
 
-# Choose your model
-MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
+# Load environment variables from .env (local dev only)
+load_dotenv()
 
-print("Loading model, this can take a few minutes...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    device_map="auto",        # auto assigns GPU if available
-    torch_dtype=torch.bfloat16 # use fp16 or bf16 for GPU efficiency
-)
-llm_pipeline = pipeline("text-generation", model=model, tokenizer=tokenizer)
+# Read API key (works for both .env and GitHub Secrets)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY is not set")
+
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Choose your OpenAI model
+MODEL_NAME = "gpt-4o-mini"
+
 
 def call_llm(input_data):
     """
-    input_data: dict with "system_prompt" and "user_message"
+    input_data: dict with keys:
+      - "system_prompt": str
+      - "user_message": dict or str
     """
+
     system_prompt = input_data.get("system_prompt", "")
     user_message = input_data.get("user_message", {})
 
-    prompt = f"{system_prompt}\n\nUSER INPUT:\n{json.dumps(user_message)}"
+    # Serialize user message safely
+    if isinstance(user_message, dict):
+        user_content = json.dumps(user_message, ensure_ascii=False)
+    else:
+        user_content = str(user_message)
 
-    outputs = llm_pipeline(prompt, max_new_tokens=512, do_sample=True, temperature=0.2)
-    return outputs[0]["generated_text"]
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+        max_tokens=512,
+    )
+
+    return response.choices[0].message.content

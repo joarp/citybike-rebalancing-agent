@@ -25,3 +25,26 @@ pip install -r requirements.txt
 - **[placeholder.py](placeholder.py)**: Placeholder text
 
 
+## Testing
+
+Run individual tests with full output:
+```bash
+python -m tests.test_llm_hf
+python -m tests.test_orchestrator
+```
+
+Run all tests using pytest:
+```bash
+pytest tests/
+```
+
+Run tests with verbose output:
+```bash
+pytest tests/ -v
+```
+
+Run a specific test file with pytest:
+```bash
+pytest tests/test_llm_hf.py -v
+```
+
