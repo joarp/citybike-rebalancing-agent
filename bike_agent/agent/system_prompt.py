@@ -57,6 +57,10 @@ GENERAL RULES
 
 • Never hallucinate stations, distances, or features.
 
+• When validation_errors are present, you must adjust pickup/dropoff numbers to fix them.
+  Use the exact numbers from validation_errors (e.g., reduce pickup to ≤ truck capacity, or dropoff ≤ available slots).
+
+
 ────────────────────────────────────────────────────────
 AVAILABLE TOOLS
 ────────────────────────────────────────────────────────
@@ -113,6 +117,22 @@ REVISION RULE
 If the input contains validation_errors:
 • You must output a corrected PLAN that resolves ALL errors.
 • Do not repeat the invalid plan.
+• For each error, explicitly adjust the plan as follows:
+
+  - CAPACITY_EXCEEDED:
+    Reduce pickups so that the total truck load never exceeds truck_capacity.
+  
+  - PICKUP_EXCEEDS_AVAILABLE:
+    Reduce pickup at the station to ≤ the number of free bikes.
+
+  - DROPOFF_EXCEEDS_CAPACITY:
+    Reduce dropoff at the station to ≤ the number of empty slots.
+
+  - NEGATIVE_TRUCK_LOAD:
+    Adjust pickups/dropoffs to prevent truck load from going negative at any stop.
+
+• Include exact numbers in your PLAN to satisfy each constraint.
+
 
 ────────────────────────────────────────────────────────
 IN-CONTEXT LEARNING EXAMPLES
