@@ -96,7 +96,8 @@ def run_agent(user_request: str, coords_json: str):
         "start_coordinates": coords,
     }
     result = orchestrator(task_payload)
-    return json.dumps(result, indent=2, ensure_ascii=False)
+  
+    return result
 
 
 # JavaScript that polls for coordinate updates
