@@ -50,9 +50,9 @@ def make_iframe_leaflet_html(center: dict) -> str:
       let marker = L.circleMarker(center, {{ radius: 8 }}).addTo(map);
 
       map.on("click", function(e) {{
-        const lat = e.latlon.lat;
-        const lon = e.latlon.lon;
-        marker.setLatlon([lat, lon]);
+        const lat = e.latlng.lat;
+        const lon = e.latlng.lng;
+        marker.setLatLng([lat, lon]);
         
         // Store in parent window
         window.parent.latestMapCoords = JSON.stringify({{ lat: lat, lon: lon }});
