@@ -3,22 +3,11 @@ import pandas as pd
 from bike_agent.tools.registry import get_tool
 from bike_agent.agent.llm_client import call_llm
 from bike_agent.agent.system_prompt import SYSTEM_PROMPT
+from bike_agent.tools.registry import get_tool_spec
+from bike_agent.agent.tool_calling import coerce_args, validate_args_against_signature
+from bike_agent.agent.prompt_tools import build_tool_catalog
+from bike_agent.tools.validate_plan import validate_plan
 
-def optimize_route(station_ids, start_id, coords_df):
-    get_distances = get_tool("get_distances")
-    dist_matrix = get_distances(coords_df)
-
-    unvisited = set(station_ids) - {start_id}
-    route = []
-    current = start_id
-
-    while unvisited:
-        nearest = min(unvisited, key=lambda x: dist_matrix.loc[current, x])
-        route.append(nearest)
-        unvisited.remove(nearest)
-        current = nearest
-
-    return route
 
 def serialize_tool_result(result):
     if isinstance(result, pd.DataFrame):
@@ -30,37 +19,17 @@ def serialize_tool_result(result):
 def orchestrator(task_payload):
     user_context = task_payload.copy()
 
-    # --- Start coordinates ---
-    start_coords = {
-        "lat": task_payload["start_coordinates"]["lat"],
-        "lon": task_payload["start_coordinates"]["lon"]
-    }
-
-    # --- Nearby stations ---
-    get_nearby_stations = get_tool("get_nearby_stations")
-    nearby_df = get_nearby_stations(k=10, radius_km=3.0, lat=start_coords["lat"], lon=start_coords["lon"])
-    user_context.setdefault("context", {})["nearby_stations"] = nearby_df.to_dict(orient="records")
-
-    # --- Optimize route ---
-    station_ids = list(nearby_df["id"])
-    start_id = "start"
-    start_row = pd.DataFrame([{
-        "id": start_id,
-        "lat": start_coords["lat"],
-        "lon": start_coords["lon"]
-    }])
-    nearby_with_start = pd.concat([nearby_df, start_row], ignore_index=True)
-    nearby_with_start.set_index("id", inplace=True)
-    route_order = optimize_route(station_ids, start_id, nearby_with_start)
-    user_context["context"]["optimized_station_order"] = route_order
+    # Build tool catalog 
+    tool_catalog_text = build_tool_catalog()
+    # Replace the placeholder token in system prompt
+    UPDATED_SYSTEM_PROMPT = SYSTEM_PROMPT.replace("__TOOLS__", tool_catalog_text)
 
     # --- Main loop for LLM interaction ---
     MAX_STEPS = 20
-
     for step in range(1, MAX_STEPS + 1):
         print(f"\n=== STEP {step} ===")
         llm_input = {
-            "system_prompt": SYSTEM_PROMPT,
+            "system_prompt": UPDATED_SYSTEM_PROMPT,
             "user_message": user_context
         }
 
@@ -77,30 +46,40 @@ def orchestrator(task_payload):
 
         if output_json["type"] == "TOOL_REQUEST":
             tool_name = output_json["tool"]
-            args = output_json.get("args", {})
-            print(f"[TOOL REQUEST] {tool_name} with args {args}")
-            tool = get_tool(tool_name)
-            tool_result = tool(**args)
-            serialized_result = serialize_tool_result(tool_result)
-            print(f"[TOOL RESULT] {tool_name}: {serialized_result}")
-            user_context.setdefault("context", {})[tool_name] = serialized_result
+            raw_args = output_json.get("args", {})
+            print(f"EXECUTING: {tool_name} WITH args: {raw_args}")
+            spec = get_tool_spec(tool_name)          # raises if unknown
+            tool_fn = spec.fn
+
+            try:
+                args = coerce_args(raw_args, spec.arg_types)
+                validate_args_against_signature(tool_fn, args)
+
+                tool_result = tool_fn(**args)
+                serialized = serialize_tool_result(tool_result)
+
+                user_context.setdefault("context", {})[tool_name] = serialized
+
+            except Exception as e:
+                user_context.setdefault("context", {})["tool_error"] = {
+                    "tool": tool_name,
+                    "error": f"{type(e).__name__}: {e}",
+                    "raw_args": raw_args,
+                }
 
         elif output_json["type"] == "PLAN":
-            validate_tool = get_tool("validate_plan")
-            errors = validate_tool(output_json, user_context["context"])
+            # print("CONTT:")
+            # print(user_context["context"])
+            errors = validate_plan(output_json, user_context["context"])
             if errors:
                 print(f"[VALIDATION ERRORS] {errors}")
                 user_context["validation_errors"] = errors
             else:
-                print("[PLAN APPROVED] Plan is valid. Moving to FINAL.")
+                print("[PLAN APPROVED] Plan is valid. Format output.")
                 user_context["approved_plan"] = output_json
                 user_context["task"] = "FINALIZE"
+                print(user_context)
                 return format_final_instructions(user_context)
-
-        elif output_json["type"] == "FINAL":
-            print("[FINAL OUTPUT]")
-            print(output_json.get("instructions", "No instructions field"))
-            break
 
         else:
             raise ValueError(f"Unknown LLM output type: {output_json['type']}")
@@ -113,8 +92,10 @@ def orchestrator(task_payload):
 
 def format_final_instructions(payload):
     plan = payload["approved_plan"]
+
+    # Only change: read stations from your actual key: context["get_nearby_stations"]
     stations = {
-        s["id"]: s for s in payload["context"]["nearby_stations"]
+        s["id"]: s for s in payload["context"]["get_nearby_stations"]
     }
 
     lines = []
@@ -143,8 +124,11 @@ def format_final_instructions(payload):
 
         station_short_id = stop["station_id"][:4]
 
+        # Only change: avoid formatting error if dist is "?"
+        dist_str = f"{dist:.2f}" if isinstance(dist, (int, float)) else "?"
+
         lines.append(
-            f"{i}️⃣ Station {station_short_id} ({dist:.2f} km)\n"
+            f"{i}️⃣ Station {station_short_id} ({dist_str} km)\n"
             f"   {action} {bikes} bikes\n"
         )
 

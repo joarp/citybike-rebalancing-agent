@@ -43,10 +43,6 @@ def get_nearby_stations(k: int, radius_km: float, lat: float, lon: float) -> pd.
     """
     Returns nearby station IDs, coordinates, free_bikes, empty_slots in order of how close they are.
 
-    Driver coordinates are taken from temporary global vars:
-      - START_LAT
-      - START_LON
-
     Output columns:
       id, latitude, longitude, free_bikes, empty_slots, distance_km
     """

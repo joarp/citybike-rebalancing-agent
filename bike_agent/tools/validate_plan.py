@@ -1,5 +1,4 @@
 # validate_plan.py
-import json
 def validate_plan(plan_json, context):
     """
     Pure validation:
@@ -20,14 +19,16 @@ def validate_plan(plan_json, context):
         })
         return errors
 
-    # Build station state from context
+    nearby = context.get("nearby_stations") or context.get("get_nearby_stations") or []
+
     stations = {
         s["id"]: {
-            "free_bikes": s["free_bikes"],
-            "empty_slots": s["empty_slots"]
+            "free_bikes": s.get("free_bikes", 0),
+            "empty_slots": s.get("empty_slots", 0)
         }
-        for s in context.get("nearby_stations", [])
+        for s in nearby
     }
+
 
     current_load = 0
 
