@@ -1,6 +1,6 @@
 # citybike-rebalancing-agent
 Check out our live demo here:
-**[Demo Webpage](https://huggingface.co)**
+**[Demo Webpage](https://huggingface.co/spaces/JoarP/demo_bike_agent)**
 
 
 ## Overview
@@ -27,10 +27,9 @@ We use he OpenAIs "gpt-4o-mini" and the LLM use in-context learning.
 ## Development process and learning outcomes along the way
 The goal was to make incremental updates and create a scalable framework where adding new tools and adapting the framework would be easy. We tried creating indepentend tests of each subpart of the project first, then write the code and make sure the desired behaviour was reached before moving on to the next part. This worked ok, where we in some cases lacked the patience to create tests, in the cases where we created tests we seemed to have less problems.
 
-Initially we thought it would be quite an easy task, considering that designing a not so flexible but reasonably well working heuristic/deterministic path generator would have been easy. But as we would realize designing a robust and flexible agentic framework that actually works is not always straight forward.
+Initially we thought it would be quite an easy task, considering that designing a not so flexible but reasonably well working heuristic/deterministic path generator would have been easy. But as we would realize designing a robust and flexible agentic framework that actually works is not always straight forward. In particular we found that the LLM has a hard time making sensible decisions when the examples deviate from the ICL examples. This could be a limit of the LLM model, but we think it is also something that in general would be a problem here, which perhaps partly could be addressed by dividing the workflow into smaller tasks, but we also realize that getting too many steps would make our application too sensitive and not robust. Consider for example if every LLM call in the chain has a 95% success rate, just using 10 calls would make the final result be more like a coinflip.
 
-Some notable things we realized along the way:
-The way we generate driving distance with OSRM gives a slightly faster time than comparing the same route on google maps.
+Some other notable things we realized along the way was that the generated driving distance with OSRM gives a slightly faster time than comparing the same route on google maps. This was not a problem in the resulting routings since the output in general leaves a lot of additional time. Which we think is good as the driver just can request a new routing (also with up to date information) as soon as he is done, rather then running out of time.
 
 
 ## Setup (to run locally)
