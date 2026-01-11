@@ -15,6 +15,7 @@ def main():
 
     stations = data["network"]["stations"]
     df = pd.DataFrame(stations)
+    df["id"] = df["id"].astype(str).str.slice(0, 4)
 
     df["timestamp"] = (
         df["timestamp"]
