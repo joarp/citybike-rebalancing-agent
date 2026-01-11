@@ -14,7 +14,9 @@ While this particular task might not seem optimally suited for an LLM-based agen
 A green dot means the station is full or almost full, a yellow dot means there is only a few bikes remaining, and a red dot means that the bike station is empty.
 
 **Agentic workflow and pipeline overview**
+
 We use the following structure of the agent and feature pipeline.
+
 ![pipeline image](assets/API.png)
 
 

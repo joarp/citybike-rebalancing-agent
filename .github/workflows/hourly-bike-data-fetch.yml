@@ -3,7 +3,7 @@ name: bike-data-fetch
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 16 * * *"  # 17:00 Europe/Stockholm during CET (winter). Cron is UTC.
+    - cron: "0 * * * *"
 
 jobs:
   run_build_features:
