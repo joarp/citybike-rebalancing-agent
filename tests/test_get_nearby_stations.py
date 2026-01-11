@@ -10,7 +10,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 def test_get_nearby_stations():
     print(get_nearby_stations(8, 2.0, 39.5696, 2.6502))
-
+    print(get_nearby_stations(8, 2.0, 39.592725828280095,2.620925903320313))
 # -------------------------------
 # RUN TEST
 # -------------------------------

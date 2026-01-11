@@ -40,11 +40,6 @@ def critic_llm(*, context: dict, plan: dict, score: dict, max_low_threshold: int
         "context": context,
         "plan": plan,
         "score": score,
-        "low_threshold": max_low_threshold,
-        "reminder": (
-            "Return JSON only. Output type must be either APPROVED or PLAN. "
-            "If PLAN, keep the same schema and only use station IDs from context."
-        ),
     }
 
     llm_input = {
@@ -146,6 +141,7 @@ def planner_step(user_context: dict, updated_system_prompt: str, max_steps: int 
             errors = validate_plan(output_json, ctx)
             if errors:
                 print("[PLANNER] Validation errors → retrying")
+                print(errors)
                 user_context["validation_errors"] = errors
                 continue
 
@@ -185,7 +181,7 @@ def improve_with_critic(
         )
 
         print("CRITIC----PLAN")
-        print(initial_plan)
+        print(critic_out)
 
         ctype = critic_out.get("type")
         print(f"[CRITIC LOOP] Critic output type: {ctype}")
@@ -200,23 +196,26 @@ def improve_with_critic(
 
         errors = validate_plan(critic_out, context)
         if errors:
-            print("[CRITIC LOOP] Revised plan invalid → stopping revisions")
-            return best_plan, best_score_obj
-
-        cand_score_obj = score_plan(critic_out, context, low_threshold=low_threshold)
-        cand_score = cand_score_obj.get("score", 0)
-
-        print(f"[CRITIC LOOP] Candidate score: {cand_score}")
-        print(f"[CRITIC LOOP] Best score so far: {best_score}")
-
-        if cand_score > best_score:
-            print("[CRITIC LOOP] Improvement accepted")
-            best_plan = critic_out
-            best_score_obj = cand_score_obj
-            best_score = cand_score
+            print("[CRITIC LOOP] Revised plan invalid → continuing (errors added to context)")
+            print(errors)
+            # Add errors to context so critic can fix next iteration
+            context["critic_validation_errors"] = errors
+            context["critic_last_invalid_plan"] = critic_out
+            continue
         else:
-            print("[CRITIC LOOP] No improvement → stopping revisions")
-            return best_plan, best_score_obj
+            # Clear critic error feedback if we got a valid plan
+            if "critic_validation_errors" in context:
+                context["critic_validation_errors"] = []
+            if "critic_last_invalid_plan" in context:
+                context["critic_last_invalid_plan"] = None
+
+            cand_score_obj = score_plan(critic_out, context, low_threshold=low_threshold)
+            cand_score = cand_score_obj.get("score", 0)
+
+            if cand_score >= best_score:
+                best_score_obj = cand_score_obj
+                best_score = cand_score
+                best_plan = critic_out
 
     print("[CRITIC LOOP] Max revisions reached")
     return best_plan, best_score_obj
@@ -235,7 +234,7 @@ def orchestrator(task_payload):
     best_plan, best_score_obj = improve_with_critic(
         context=ctx,
         initial_plan=plan,
-        max_revisions=3,
+        max_revisions=4,
         low_threshold=3,
     )
 
@@ -252,9 +251,28 @@ def format_final_instructions(payload):
     plan = payload["approved_plan"]
     context = payload.get("context", {})
 
-    # Assume nearby stations are usually there, but do not crash if missing
     nearby = context.get("nearby_stations") or context.get("get_nearby_stations") or []
     stations = {s["id"]: s for s in nearby if isinstance(s, dict) and "id" in s}
+
+    # Build distance lookup if available
+    distances = context.get("get_distances", {})
+    pair_lookup = {}
+    if isinstance(distances, dict):
+        for p in distances.get("pairs", []):
+            a, b = p.get("from"), p.get("to")
+            if a and b:
+                pair_lookup[(a, b)] = p
+                pair_lookup[(b, a)] = p  # treat as undirected
+
+    def leg_info(frm, to):
+        p = pair_lookup.get((frm, to))
+        if not p:
+            return None
+        d = p.get("distance_km")
+        t = p.get("duration_min")
+        if isinstance(d, (int, float)) and isinstance(t, (int, float)):
+            return f"{d:.2f} km · {t:.1f} min"
+        return None
 
     lines = []
     lines.append("🚚 Citybike Rebalancing Route\n")
@@ -274,21 +292,24 @@ def format_final_instructions(payload):
     lines.append("─" * 28)
     lines.append("\n🔄 Rebalancing instructions\n")
 
+    prev_id = "start"
+
     for i, stop in enumerate(plan.get("stops", []), start=1):
         sid = stop.get("station_id", "????")
-        station = stations.get(sid, {})
-        dist = station.get("distance_km", "?")
-
         action = "➕ Pick up" if stop.get("action") == "pickup" else "➖ Drop off"
         bikes = stop.get("bikes", "?")
 
-        station_short_id = str(sid)[:4]
-        dist_str = f"{dist:.2f}" if isinstance(dist, (int, float)) else "?"
+        # Travel leg (if available)
+        leg = leg_info(prev_id, sid)
+        if leg:
+            lines.append(f"➡️  Drive: {leg}\n")
 
         lines.append(
-            f"{i}️⃣ Station {station_short_id} ({dist_str} km)\n"
+            f"{i}️⃣ Station {str(sid)[:4]}\n"
             f"   {action} {bikes} bikes\n"
         )
+
+        prev_id = sid
 
     lines.append("─" * 28)
     lines.append(

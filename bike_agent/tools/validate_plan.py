@@ -6,7 +6,6 @@ def validate_plan(plan_json, context):
     - Uses only provided context
     - Deterministic
     """
-
     errors = []
 
     assumptions = plan_json.get("assumptions", {})
@@ -28,7 +27,6 @@ def validate_plan(plan_json, context):
         }
         for s in nearby
     }
-
 
     current_load = 0
 
@@ -59,6 +57,8 @@ def validate_plan(plan_json, context):
                     "code": "PICKUP_EXCEEDS_AVAILABLE",
                     "detail": f"Pickup {bikes} from {station_id}, only {station['free_bikes']} available"
                 })
+                continue
+
             current_load += bikes
             station["free_bikes"] -= bikes
             station["empty_slots"] += bikes
@@ -69,6 +69,8 @@ def validate_plan(plan_json, context):
                     "code": "DROPOFF_EXCEEDS_CAPACITY",
                     "detail": f"Dropoff {bikes} to {station_id}, only {station['empty_slots']} slots available"
                 })
+                continue
+
             current_load -= bikes
             station["free_bikes"] += bikes
             station["empty_slots"] -= bikes

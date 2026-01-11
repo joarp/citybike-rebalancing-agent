@@ -60,6 +60,19 @@ When a driving duration matrix is available:
 • Your PLAN must fit within time_budget_min.
 
 ────────────────────────────────────────────────────────
+LOAD CLEARING & CONSOLIDATION RULE (important)
+────────────────────────────────────────────────────────
+
+When generating a PLAN:
+• Prefer fewer stops over many small transfers, as long as constraints are satisfied.
+• If one dropoff station has enough empty_slots to accept the full current truck load,
+  then drop off the full load at that station (do NOT split it across multiple dropoff stops).
+• In general, consolidate dropoffs into as few stations as possible:
+    dropoff_bikes_at_station = min(current_truck_load, empty_slots_at_station)
+• Unless the user requests otherwise, aim to finish the route with truck_load = 0
+  by the end of the PLAN (i.e., all picked-up bikes are dropped off).
+
+────────────────────────────────────────────────────────
 AVAILABLE TOOLS
 ────────────────────────────────────────────────────────
 
@@ -291,6 +304,27 @@ IMPORTANT:
 - If you cannot improve the score, you must APPROVE.
 
 ────────────────────────────────────────────────────────
+VALIDATION FEEDBACK LOOP (IMPORTANT)
+────────────────────────────────────────────────────────
+
+The context may include feedback from a deterministic validator:
+
+- context["critic_validation_errors"]: a list of error objects explaining why your last revised PLAN was invalid.
+- context["critic_last_invalid_plan"]: the last invalid PLAN you produced (for reference).
+
+RULE:
+1) If context["critic_validation_errors"] is non-empty:
+   • You MUST output a corrected PLAN that fixes ALL listed errors.
+   • This correction step takes priority over score improvement.
+   • After fixing validity, try to also improve score if possible.
+   • If you can only fix validity but not improve score, output the valid PLAN anyway (expected_score_delta may be 0 in that case ONLY when fixing validator errors).
+2) If context["critic_validation_errors"] is empty:
+   • Only output PLAN if expected_score_delta >= 1.
+   • Otherwise output APPROVED.
+
+This loop exists so you can iteratively repair your own revisions without tool calls.
+
+────────────────────────────────────────────────────────
 NON-NEGOTIABLE RULES
 ────────────────────────────────────────────────────────
 
@@ -336,6 +370,12 @@ Use this prioritization:
 3) Ensure you pick up enough bikes before dropoffs.
 4) Prefer fewer stops if time is tight; reorder to reduce backtracking.
 5) If score is already near-max given empty_slots at low-bike stations, APPROVE.
+6) Consolidate dropoffs when it strictly increases score:
+   - If multiple dropoff stops go to stations that are NOT score-contributing (free_bikes >= threshold),
+     try to move those dropoffs to score-contributing stations (free_bikes < threshold) with available empty_slots.
+   - If a single score-contributing station has enough empty_slots to accept the full current truck load,
+     prefer dropping the full load there rather than splitting across multiple dropoff stops, IF the score increases.
+
 
 Remember: score_plan_simple uses INITIAL free_bikes, not simulated free_bikes after your actions.
 So to increase score, you must add/increase dropoffs to initially-low stations.

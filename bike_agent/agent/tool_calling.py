@@ -29,8 +29,6 @@ def coerce_value(value: Any, type_tag: str):
         if not isinstance(value, list):
             raise TypeError(f"Expected list, got {type(value)}")
         return value
-
-    # Common ML/agent types:
     if type_tag == "dataframe_records":
         # Expect list[dict] or dict with "records"
         if isinstance(value, list):
