@@ -13,9 +13,8 @@ In this project we have created an agent which plans how citybikes should be mov
 A green dot means the station is full or almost full, a yellow dot means there is only a few bikes remaining, and a red dot means that the bike station is empty.
 
 **Agentic workflow and pipeline overview**
-
-![pipeline image](assets/API.png)
 We use the following structure of the agent and feature pipeline.
+![pipeline image](assets/API.png)
 
 
 ## LLM and In-context Learning
