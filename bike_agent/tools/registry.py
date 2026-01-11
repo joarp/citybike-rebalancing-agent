@@ -58,21 +58,31 @@ def list_tools():
 register_tool(
     "get_nearby_stations",
     get_nearby_stations,
-    arg_types={"k": "int", "radius_km": "float", "lat": "float", "lon": "float"},
-    description="Find k nearby stations within radius_km of (lat, lon).",
+    arg_types={
+        "k": "int",
+        "radius_km": "float",
+        "lat": "float",
+        "lon": "float",
+    },
+    description=(
+        "Find k nearby stations within radius_km of (lat, lon). "
+        "Uses haversine distance for fast candidate selection. "
+        "Use get_distances afterwards to compute driving distance/time."
+    ),
 )
 
 register_tool(
     "get_station_features",
     get_station_features,
-    arg_types={"station_id": "str"},
+    arg_types={
+        "station_id": "str",
+    },
     description="Fetch features/status for a single station by station_id.",
 )
 
 register_tool(
     "get_distances",
     get_distances,
-    arg_types={"station_ids": "list"},
-    description="Compute pairwise distances between stations.",
+    arg_types={"stations": "list", "start_coordinates": "dict"},
+    description="Compute pairwise driving distances and durations between candidate stations using OSRM. If start_coordinates is provided, includes a 'start' node in the matrices. When calling get_distances, include at most 10 stations.",
 )
-

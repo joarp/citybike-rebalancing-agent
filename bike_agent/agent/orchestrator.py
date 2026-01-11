@@ -1,130 +1,288 @@
 import json
 import pandas as pd
-from bike_agent.tools.registry import get_tool
+
 from bike_agent.agent.llm_client import call_llm
-from bike_agent.agent.system_prompt import SYSTEM_PROMPT
+from bike_agent.agent.system_prompt import SYSTEM_PROMPT, CRITIC_SYSTEM_PROMPT
+
 from bike_agent.tools.registry import get_tool_spec
 from bike_agent.agent.tool_calling import coerce_args, validate_args_against_signature
 from bike_agent.agent.prompt_tools import build_tool_catalog
+
 from bike_agent.tools.validate_plan import validate_plan
+from bike_agent.tools.score_plan import score_plan
 
 
 def serialize_tool_result(result):
     if isinstance(result, pd.DataFrame):
         return result.to_dict(orient="records")
-    if isinstance(result, (list, dict)):
-        return result
-    return str(result)
 
-def orchestrator(task_payload):
-    user_context = task_payload.copy()
+    if isinstance(result, dict):
+        return {k: serialize_tool_result(v) for k, v in result.items()}
 
-    # Build tool catalog 
-    tool_catalog_text = build_tool_catalog()
-    # Replace the placeholder token in system prompt
-    UPDATED_SYSTEM_PROMPT = SYSTEM_PROMPT.replace("__TOOLS__", tool_catalog_text)
+    if isinstance(result, (list, tuple)):
+        return [serialize_tool_result(x) for x in result]
 
-    # --- Main loop for LLM interaction ---
-    MAX_STEPS = 20
-    for step in range(1, MAX_STEPS + 1):
-        print(f"\n=== STEP {step} ===")
-        llm_input = {
-            "system_prompt": UPDATED_SYSTEM_PROMPT,
-            "user_message": user_context
+    try:
+        import numpy as np
+        if isinstance(result, (np.integer, np.floating)):
+            return result.item()
+    except Exception:
+        pass
+
+    return result
+
+
+def critic_llm(*, context: dict, plan: dict, score: dict, max_low_threshold: int = 3) -> dict:
+    print("\n[CRITIC] Calling critic LLM")
+    print(f"[CRITIC] Current score: {score.get('score')}")
+
+    critic_user_message = {
+        "context": context,
+        "plan": plan,
+        "score": score,
+        "low_threshold": max_low_threshold,
+        "reminder": (
+            "Return JSON only. Output type must be either APPROVED or PLAN. "
+            "If PLAN, keep the same schema and only use station IDs from context."
+        ),
+    }
+
+    llm_input = {
+        "system_prompt": CRITIC_SYSTEM_PROMPT,
+        "user_message": critic_user_message,
+    }
+    llm_output = call_llm(llm_input)
+
+    try:
+        out = json.loads(llm_output)
+    except json.JSONDecodeError:
+        print("[CRITIC] Non-JSON output → APPROVED")
+        return {
+            "type": "APPROVED",
+            "reason": "Critic returned non-JSON output; passing through current plan.",
+            "expected_score_delta": 0,
         }
 
+    print(f"[CRITIC] Output type: {out.get('type')}")
+    print(f"[CRITIC] Expected score delta: {out.get('expected_score_delta')}")
+
+    t = out.get("type")
+    if t == "APPROVED":
+        try:
+            delta = int(out.get("expected_score_delta", 0))
+        except Exception:
+            delta = 0
+        out["expected_score_delta"] = max(0, delta)
+        out.setdefault("reason", "Approved.")
+        print("[CRITIC] Plan approved")
+        return out
+
+    if t == "PLAN":
+        if "assumptions" not in out or "stops" not in out:
+            print("[CRITIC] Invalid PLAN structure → APPROVED")
+            return {
+                "type": "APPROVED",
+                "reason": "Critic PLAN missing required fields; passing through current plan.",
+                "expected_score_delta": 0,
+            }
+
+        try:
+            delta = int(out.get("expected_score_delta", 1))
+        except Exception:
+            delta = 1
+        out["expected_score_delta"] = max(0, delta)
+        out.setdefault("reason", "Revised plan.")
+        print("[CRITIC] Revised PLAN proposed")
+        return out
+
+    print("[CRITIC] Unknown output type → APPROVED")
+    return {
+        "type": "APPROVED",
+        "reason": f"Critic returned unknown type '{t}'; passing through current plan.",
+        "expected_score_delta": 0,
+    }
+
+
+def planner_step(user_context: dict, updated_system_prompt: str, max_steps: int = 20) -> dict:
+    print("\n[PLANNER] Starting planner loop")
+
+    for step in range(1, max_steps + 1):
+        print(f"\n[PLANNER] Step {step}/{max_steps}")
+
+        llm_input = {"system_prompt": updated_system_prompt, "user_message": user_context}
         llm_output = call_llm(llm_input)
 
         try:
             output_json = json.loads(llm_output)
-            output_type = output_json.get("type", "UNKNOWN")
-            print(f"[LLM OUTPUT TYPE]: {output_type}")
         except json.JSONDecodeError:
-            print("LLM returned non-JSON output (assuming FINAL instructions):")
-            print(llm_output)
-            break
+            raise RuntimeError(f"Planner returned non-JSON output:\n{llm_output}")
 
-        if output_json["type"] == "TOOL_REQUEST":
+        out_type = output_json.get("type")
+        print(f"[PLANNER] Output type: {out_type}")
+
+        if out_type == "TOOL_REQUEST":
             tool_name = output_json["tool"]
+            print(f"[PLANNER] TOOL_REQUEST → {tool_name}")
+
             raw_args = output_json.get("args", {})
-            print(f"EXECUTING: {tool_name} WITH args: {raw_args}")
-            spec = get_tool_spec(tool_name)          # raises if unknown
+            spec = get_tool_spec(tool_name)
             tool_fn = spec.fn
 
-            try:
-                args = coerce_args(raw_args, spec.arg_types)
-                validate_args_against_signature(tool_fn, args)
+            args = coerce_args(raw_args, spec.arg_types)
+            validate_args_against_signature(tool_fn, args)
 
-                tool_result = tool_fn(**args)
-                serialized = serialize_tool_result(tool_result)
+            tool_result = tool_fn(**args)
+            serialized = serialize_tool_result(tool_result)
 
-                user_context.setdefault("context", {})[tool_name] = serialized
+            ctx = user_context.setdefault("context", {})
+            ctx[tool_name] = serialized
+            if tool_name == "get_nearby_stations":
+                ctx["nearby_stations"] = serialized
 
-            except Exception as e:
-                user_context.setdefault("context", {})["tool_error"] = {
-                    "tool": tool_name,
-                    "error": f"{type(e).__name__}: {e}",
-                    "raw_args": raw_args,
-                }
+            continue
 
-        elif output_json["type"] == "PLAN":
-            # print("CONTT:")
-            # print(user_context["context"])
-            errors = validate_plan(output_json, user_context["context"])
+        if out_type == "PLAN":
+            ctx = user_context.setdefault("context", {})
+            errors = validate_plan(output_json, ctx)
             if errors:
-                print(f"[VALIDATION ERRORS] {errors}")
+                print("[PLANNER] Validation errors → retrying")
                 user_context["validation_errors"] = errors
-            else:
-                print("[PLAN APPROVED] Plan is valid. Format output.")
-                user_context["approved_plan"] = output_json
-                user_context["task"] = "FINALIZE"
-                print(user_context)
-                return format_final_instructions(user_context)
+                continue
 
+            print("[PLANNER] Valid PLAN found")
+            return output_json
+
+        raise ValueError(f"Unknown planner output type: {out_type}")
+
+    raise RuntimeError("Planner did not produce a valid plan within max_steps")
+
+
+def improve_with_critic(
+    *,
+    context: dict,
+    initial_plan: dict,
+    max_revisions: int = 3,
+    low_threshold: int = 3
+) -> tuple[dict, dict]:
+    print("\n[CRITIC LOOP] Starting critic revision loop")
+
+    print("INITIAL----PLAN")
+    print(initial_plan)
+    best_plan = initial_plan
+    best_score_obj = score_plan(best_plan, context, low_threshold=low_threshold)
+    best_score = best_score_obj.get("score", 0)
+
+    print(f"[CRITIC LOOP] Initial score: {best_score}")
+
+    for r in range(max_revisions):
+        print(f"\n[CRITIC LOOP] Revision {r + 1}/{max_revisions}")
+
+        critic_out = critic_llm(
+            context=context,
+            plan=best_plan,
+            score=best_score_obj,
+            max_low_threshold=low_threshold,
+        )
+
+        print("CRITIC----PLAN")
+        print(initial_plan)
+
+        ctype = critic_out.get("type")
+        print(f"[CRITIC LOOP] Critic output type: {ctype}")
+
+        if ctype == "APPROVED":
+            print("[CRITIC LOOP] Approved → stopping revisions")
+            return best_plan, best_score_obj
+
+        if ctype != "PLAN":
+            print("[CRITIC LOOP] Unexpected output → stopping revisions")
+            return best_plan, best_score_obj
+
+        errors = validate_plan(critic_out, context)
+        if errors:
+            print("[CRITIC LOOP] Revised plan invalid → stopping revisions")
+            return best_plan, best_score_obj
+
+        cand_score_obj = score_plan(critic_out, context, low_threshold=low_threshold)
+        cand_score = cand_score_obj.get("score", 0)
+
+        print(f"[CRITIC LOOP] Candidate score: {cand_score}")
+        print(f"[CRITIC LOOP] Best score so far: {best_score}")
+
+        if cand_score > best_score:
+            print("[CRITIC LOOP] Improvement accepted")
+            best_plan = critic_out
+            best_score_obj = cand_score_obj
+            best_score = cand_score
         else:
-            raise ValueError(f"Unknown LLM output type: {output_json['type']}")
+            print("[CRITIC LOOP] No improvement → stopping revisions")
+            return best_plan, best_score_obj
 
-    else:
-        raise RuntimeError("Agent did not converge within MAX_STEPS")
+    print("[CRITIC LOOP] Max revisions reached")
+    return best_plan, best_score_obj
 
-    return json.dumps(user_context, indent=2, ensure_ascii=False)
+
+def orchestrator(task_payload):
+    print("\n[ORCHESTRATOR] Starting orchestration")
+
+    user_context = task_payload.copy()
+    tool_catalog_text = build_tool_catalog()
+    UPDATED_SYSTEM_PROMPT = SYSTEM_PROMPT.replace("__TOOLS__", tool_catalog_text)
+
+    plan = planner_step(user_context, UPDATED_SYSTEM_PROMPT, max_steps=20)
+
+    ctx = user_context.setdefault("context", {})
+    best_plan, best_score_obj = improve_with_critic(
+        context=ctx,
+        initial_plan=plan,
+        max_revisions=3,
+        low_threshold=3,
+    )
+
+    print("\n[ORCHESTRATOR] Final plan approved")
+    print(f"[ORCHESTRATOR] Final score: {best_score_obj.get('score')}")
+
+    user_context["approved_plan"] = best_plan
+    user_context["approved_score"] = best_score_obj
+    return format_final_instructions(user_context)
+
 
 
 def format_final_instructions(payload):
     plan = payload["approved_plan"]
+    context = payload.get("context", {})
 
-    # Only change: read stations from your actual key: context["get_nearby_stations"]
-    stations = {
-        s["id"]: s for s in payload["context"]["get_nearby_stations"]
-    }
+    # Assume nearby stations are usually there, but do not crash if missing
+    nearby = context.get("nearby_stations") or context.get("get_nearby_stations") or []
+    stations = {s["id"]: s for s in nearby if isinstance(s, dict) and "id" in s}
 
     lines = []
-    lines.append("🚚 Citybike Rebalancing Route (2 hours)\n")
+    lines.append("🚚 Citybike Rebalancing Route\n")
 
-    start = payload["start_coordinates"]
-    lines.append(
-        f"Start location:\n📍 {start['lat']:.5f}, {start['lon']:.5f}\n"
-    )
+    start = payload.get("start_coordinates", {})
+    if "lat" in start and "lon" in start:
+        lines.append(f"Start location:\n📍 {start['lat']:.5f}, {start['lon']:.5f}\n")
+    else:
+        lines.append("Start location:\n📍 (missing)\n")
 
-    assumptions = plan["assumptions"]
+    assumptions = plan.get("assumptions", {})
     lines.append(
-        f"Truck capacity: {assumptions['truck_capacity']} bikes\n"
-        f"Time budget: {assumptions['time_budget_min']} minutes\n"
+        f"Truck capacity: {assumptions.get('truck_capacity', '?')} bikes\n"
+        f"Time budget: {assumptions.get('time_budget_min', '?')} minutes\n"
     )
 
     lines.append("─" * 28)
     lines.append("\n🔄 Rebalancing instructions\n")
 
-    for i, stop in enumerate(plan["stops"], start=1):
-        station = stations.get(stop["station_id"], {})
+    for i, stop in enumerate(plan.get("stops", []), start=1):
+        sid = stop.get("station_id", "????")
+        station = stations.get(sid, {})
         dist = station.get("distance_km", "?")
 
-        action = "➕ Pick up" if stop["action"] == "pickup" else "➖ Drop off"
-        bikes = stop["bikes"]
+        action = "➕ Pick up" if stop.get("action") == "pickup" else "➖ Drop off"
+        bikes = stop.get("bikes", "?")
 
-        station_short_id = stop["station_id"][:4]
-
-        # Only change: avoid formatting error if dist is "?"
+        station_short_id = str(sid)[:4]
         dist_str = f"{dist:.2f}" if isinstance(dist, (int, float)) else "?"
 
         lines.append(
@@ -135,9 +293,8 @@ def format_final_instructions(payload):
     lines.append("─" * 28)
     lines.append(
         "\n✅ Result\n"
-        f"• {len(plan['stops'])} stations rebalanced\n"
-        "• Truck load kept within capacity\n"
-        "• Route optimized for distance\n\n"
+        f"• {len(plan.get('stops', []))} stations rebalanced\n"
+        "• Truck load kept within capacity\n\n"
         "Drive safely! 🚦"
     )
 

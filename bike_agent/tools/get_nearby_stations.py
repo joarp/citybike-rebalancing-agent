@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-
+import requests
 from .feature_store import get_features
 
 """
@@ -37,7 +37,6 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     c = 2 * np.arcsin(np.sqrt(a))
     R = 6371  # Earth radius in km
     return R * c
-
 
 def get_nearby_stations(k: int, radius_km: float, lat: float, lon: float) -> pd.DataFrame:
     """

@@ -141,7 +141,7 @@ with gr.Blocks(title="Citybike Rebalancing Agent") as app:
         with gr.Column(scale=1):
             user_request = gr.Textbox(
                 label="Task request",
-                value="I work for 2 hours, give me my route.",
+                value="Give me my route for the coming hour.",
                 lines=4,
             )
             run_btn = gr.Button("Generate route")
