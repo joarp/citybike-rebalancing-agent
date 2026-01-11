@@ -251,9 +251,6 @@ def format_final_instructions(payload):
     plan = payload["approved_plan"]
     context = payload.get("context", {})
 
-    nearby = context.get("nearby_stations") or context.get("get_nearby_stations") or []
-    stations = {s["id"]: s for s in nearby if isinstance(s, dict) and "id" in s}
-
     # Build distance lookup if available
     distances = context.get("get_distances", {})
     pair_lookup = {}
