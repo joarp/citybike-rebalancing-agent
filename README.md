@@ -4,7 +4,7 @@ Check out our live demo here:
 
 
 ## Overview
-In this project we have created an agent which plans how citybikes should be moved by a truckdriver in Palma. We imagine that the truckdriver works for a citybikes company in Palma and can move a certain amount of bikes in his truck. The goal of our planning agent is to work in the same way as a human planner would, by getting info about where the truckdriver is and the availability of bikes at different stations. The planning agent should generate a route for the truckdriver and instructions on how many bikes to pickup and dropoff at every station. The route should make as many stations as possible optimally stacked with bikes, i.e no stations with empty or just a few bikes. We imagine the scenario where the truckdriver requests a new route reasonably often, i.e. once an hour since bike availability changes throughout the day and we still think it is more appropriate to run it on a schedule as opposed to streaming the API during the request. This is because it might be desired to add more drivers and then a feature store would make things a lot easier. Since we are using an agent we also allow for special requests in the same way a human planning agent would, for example if the driver needs to keep some bikes in the truck and so on.
+In this project we have created an agent which plans how citybikes should be moved by a truckdriver in Palma. We imagine that the truckdriver works for a citybikes company in Palma and can move a certain amount of bikes in his truck. The goal of our planning agent is to work in the same way as a human planner would, by getting info about where the truckdriver is and the availability of bikes at different stations. The planning agent should generate a route for the truckdriver and instructions on how many bikes to pickup and dropoff at every station. The route should make as many stations as possible optimally stacked with bikes, i.e no stations with empty or just a few bikes. We imagine the scenario where the truckdriver requests a new route reasonably often, i.e. once an hour since bike availability changes throughout the day where we think it is appropriate to run the data fetching on a schedule as opposed to streaming the API during the request. This is because it might be desired to add more drivers, then a feature store would make things a lot easier. Since we are using an agent we also allow for special requests in the same way a human planning agent would, for example if the driver needs to keep some bikes in the truck and so on. This is what we belive would make this more useful in production opposed to a deterministic heurstic.
 
 While this particular task might not seem optimally suited for an LLM-based agentic framework we still think it suits the purpose of learning to design a scalable agentic framework well. We also see that recently,  LLMs have started being used in more logically demanding domains and think this project could give valuable insight into this process and the pros and cons of using an LLM for such tasks.
 
@@ -22,7 +22,7 @@ We use the following structure of the agent and feature pipeline.
 
 
 ## LLM and In-context Learning
-We use he OpenAIs "gpt-4o-mini" and the LLM use in-context learning.
+We use OpenAIs "gpt-4o-mini" and the LLM use in-context learning.
 
 ## Development process and learning outcomes along the way
 The goal was to make incremental updates and create a scalable framework where adding new tools and adapting the framework would be easy. We tried creating indepentend tests of each subpart of the project first, then write the code and make sure the desired behaviour was reached before moving on to the next part. This worked ok, where we in some cases lacked the patience to create tests, in the cases where we created tests we seemed to have less problems.
@@ -53,22 +53,12 @@ python app.py
 
 Run individual tests with full output:
 ```bash
-python -m tests.test_llm_hf
+python -m tests.test_llm
 python -m tests.test_orchestrator
 ```
 
 Run all tests using pytest:
 ```bash
 pytest tests/
-```
-
-Run tests with verbose output:
-```bash
-pytest tests/ -v
-```
-
-Run a specific test file with pytest:
-```bash
-pytest tests/test_llm_hf.py -v
 ```
 
